@@ -1,7 +1,7 @@
 ## ENVST 325 Activity 7
 ## Author: Jacqueline Reynaga
 ## Date Created: 4-09-26
-## Date Last Updated: 4-12-26
+## Date Last Updated: 4-16-26
 
 library(dplyr)
 library(ggplot2)
@@ -12,7 +12,6 @@ library(PerformanceAnalytics)
 # in-class tutorial -------------------------------------------------------
 
 ghg <- read.csv("/cloud/project/activity07/Deemer_GHG_Data.csv")
-et <- read.csv("/cloud/project/activity07/ETdata.csv")
 
 ## transforming data
 ### data is mainly very low values, indicates that log transformation
@@ -117,13 +116,14 @@ predict.lm(mod.full, data.frame(airTemp = 20,
 ## would be expected to affect methane release
 
 ghg$log.chlorA <- log(ghg$chlorophyll.a)
-ghg$log.surfArea <- log(ghg$surface.area)
 ghg$log.vol <- log(ghg$volume + 1)
+ghg$log.runoff <- log(ghg$runoff + 1)
 
 ### model
 hydro_mod.full <- lm(log.ch4 ~ airTemp +
                        log.age + mean.depth +
-                       log.precip + BorealV, data = ghg)
+                       log.DIP + HydroV +
+                       log.precip + BorealV + surface.area, data = ghg)
 summary(hydro_mod.full)
 
 ### check assumptions
@@ -139,10 +139,12 @@ plot(hydro_fit.full, hydro_res.full, pch = 19, col = "grey50")
 abline(h = 0)
 
 hydro_reg.data <- data.frame(ghg$airTemp,
-                       ghg$log.age,
-                       ghg$mean.depth,
-                       ghg$log.precip,
-                       ghg$BorealV)
+                             ghg$log.age,
+                             ghg$log.DIP,
+                             ghg$HydroV,
+                             ghg$mean.depth,
+                             ghg$log.precip,
+                             ghg$surface.area)
 chart.Correlation(hydro_reg.data, histogram = TRUE, pch = 19)
 
 ### model selection
@@ -152,4 +154,89 @@ hydro_full.step$model
 plot(hydro_full.step)
 
 
+
+## count NAs
+sapply(ghg, function(x) sum(is.na(x)))
+
+
+
+
+# in-class tutorial pt. 2 -------------------------------------------------
+library(lubridate)
+library(forecast)
+library(ggplot2)
+library(dplyr)
+
+ETdat <- read.csv("/cloud/project/activity07/ETdata.csv")
+unique(ETdat$crop)
+
+## avg fields for each month for almonds
+almond <- ETdat %>% 
+  filter(crop == 'Almonds') %>% 
+  group_by(date) %>% 
+  summarise(ET.in = mean(Ensemble.ET, na.rm = TRUE))
+
+ggplot(almond, aes(x = ymd(date), y = ET.in)) +
+  geom_point() +
+  geom_line() +
+  labs(x = 'year', y = 'Monthly Evapotranspiration (in)')
+
+## time series
+almond_ts <- ts(almond$ET.in, 
+                start = c(2016, 1),
+                frequency = 12)
+
+## decompose time series
+almond_dec <- decompose(almond_ts)
+plot(almond_dec)
+
+## autocorrelation
+almondTrend <- almond_dec$trend
+almondSeason <- almond_dec$seasonal
+
+acf(na.omit(almond_ts),
+    lag.max = 24)
+
+## autoregressive (AR) models
+pcaf.plot <- pacf(na.omit(almond_ts))
+almond_y <- na.omit(almond_ts)
+model1 <- arima(almond_y,
+                order = c(1, 0, 0))
+model1
+
+model4 <- arima(almond_y,
+                order = c(4, 0, 0))
+model4
+
+### compare fitted values between models
+AR_fit1 <- almond_y - residuals(model1)
+AR_fit4 <- almond_y - residuals(model4)
+
+plot(almond_y)
+points(AR_fit1, type = 'l', col = 'purple', lty = 2, lwd = 2)
+points(AR_fit4, type = 'l', col = 'steelblue', lty = 2, lwd = 2)
+legend("topleft", c('data', 'AR1', "AR4"),
+       lty = c(1, 2, 2), lwd = c(1, 2, 2),
+       col = c('black', 'purple', 'steelblue'),
+       bty = 'n')
+
+## forecast
+newAlmond <- forecast(model4)
+newAlmond
+
+newAlmondF <- data.frame(newAlmond)
+years <- c(rep(2021, 4), rep(2022, 12), rep(2023, 8))
+month <- c(seq(9, 12), seq(1, 12), seq(1, 8))
+newAlmondF$dateF <- ymd(paste(years, '/', month, '/', 1))
+
+ggplot() +
+  geom_line(data = almond, aes(x = ymd(date), y = ET.in)) +
+  xlim(ymd(almond$date[1], newAlmondF$dateF[24])) +
+  geom_line(data = newAlmondF, aes(x = dateF, y = Point.Forecast),
+            col = 'red') +
+  geom_ribbon(data = newAlmondF,
+              aes(x = dateF, ymin = Lo.95, ymax = Hi.95),
+              fill = rgb(0.5, 0.5, 0.5, 0.5)) +
+  theme_classic() +
+  labs(x = 'Year', y = 'Evapotranspiration (in)')
 
