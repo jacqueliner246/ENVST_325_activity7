@@ -153,8 +153,6 @@ hydro_full.step
 hydro_full.step$model
 plot(hydro_full.step)
 
-
-
 ## count NAs
 sapply(ghg, function(x) sum(is.na(x)))
 
@@ -238,5 +236,164 @@ ggplot() +
               aes(x = dateF, ymin = Lo.95, ymax = Hi.95),
               fill = rgb(0.5, 0.5, 0.5, 0.5)) +
   theme_classic() +
-  labs(x = 'Year', y = 'Evapotranspiration (in)')
+  labs(x = 'Year', y = 'Almond evapotranspiration (in)')
+
+
+
+# homework ----------------------------------------------------------------
+
+## question 1
+## multiple regression analysis of the impact of reservoir characteristics 
+## on carbon dioxide fluxes
+
+### transform co2 data
+ghg$CO2_transformed = (1 / (ghg$co2 / 1000))
+### model
+co2_mod.full <- lm(CO2_transformed ~ airTemp +
+                     log.runoff + log.DIP +
+                     mean.depth + log.age +
+                     Latitude + HydroV,
+                   data = ghg)
+summary(co2_mod.full)
+
+### check assumptions
+co2_res.full <- rstandard(co2_mod.full) 
+co2_fit.full <- fitted.values(co2_mod.full) 
+
+qqnorm(co2_res.full, pch = 19, col = "grey50") 
+qqline(co2_res.full)
+
+shapiro.test(co2_res.full)
+
+plot(co2_fit.full, co2_res.full, pch = 19, col = "grey50")
+abline(h = 0)
+
+co2_reg.data <- data.frame(ghg$airTemp,
+                             ghg$log.age,
+                             ghg$log.DIP,
+                             ghg$HydroV,
+                             ghg$mean.depth,
+                             ghg$log.precip,
+                           ghg$Latitude)
+chart.Correlation(co2_reg.data, histogram = TRUE, pch = 19)
+
+### model selection
+co2_full.step <- ols_step_forward_aic(co2_mod.full) 
+co2_full.step 
+co2_full.step$model
+plot(co2_full.step)
+
+## question 3
+## evapotranspiration time series for almonds, pistachios, 
+## fallow/idle fields, corn, and table grapes
+
+### avg fields for each month
+pistachios <- ETdat %>% 
+  filter(crop == 'Pistachios') %>% 
+  group_by(date) %>% 
+  summarise(ET.in = mean(Ensemble.ET, na.rm = TRUE))
+
+fallow <- ETdat %>% 
+  filter(crop == 'Fallow/Idle Cropland') %>% 
+  group_by(date) %>% 
+  summarise(ET.in = mean(Ensemble.ET, na.rm = TRUE))
+
+corn <- ETdat %>% 
+  filter(crop == 'Corn') %>% 
+  group_by(date) %>% 
+  summarise(ET.in = mean(Ensemble.ET, na.rm = TRUE))
+
+grapes <- ETdat %>% 
+  filter(crop == 'Grapes (Table/Raisin)') %>% 
+  group_by(date) %>% 
+  summarise(ET.in = mean(Ensemble.ET, na.rm = TRUE))
+
+### time series
+pistachio_ts <- ts(pistachios$ET.in, 
+                start = c(2016, 1),
+                frequency = 12)
+
+fallow_ts <- ts(fallow$ET.in, 
+                   start = c(2016, 1),
+                   frequency = 12)
+
+corn_ts <- ts(corn$ET.in, 
+                   start = c(2016, 1),
+                   frequency = 12)
+
+grape_ts <- ts(grapes$ET.in, 
+                   start = c(2016, 1),
+                   frequency = 12)
+
+### decompose time series
+pistachio_dec <- decompose(pistachio_ts)
+fallow_dec <- decompose(fallow_ts)
+corn_dec <- decompose(corn_ts)
+grape_dec <- decompose(grape_ts)
+
+### plots
+plot(almond_dec)
+title("(almonds)", line = 1.1)
+plot(pistachio_dec)
+title("(pistachios)", line = 1.1)
+plot(fallow_dec)
+title("(fallow/idle cropland)", line = 1.1)
+plot(corn_dec)
+title("(corn)", line = 1.1)
+plot(grape_dec)
+title("(table grapes)", line = 1.1)
+
+## question 4
+## autoregressive model for pistachios and fallow/idle fields
+## historical and forecasted evapotranspiration plots
+
+### autoregressive (AR) models
+pistachio_y <- na.omit(pistachio_ts)
+model4p <- arima(pistachio_y,
+                order = c(4, 0, 0))
+model4p
+
+fallow_y <- na.omit(fallow_ts)
+model4f <- arima(fallow_y,
+                 order = c(4, 0, 0))
+model4f
+
+### forecast
+newPistachio <- forecast(model4p)
+newPistachio
+
+newFallow <- forecast(model4f)
+newFallow
+
+newPistachioF <- data.frame(newPistachio)
+years <- c(rep(2021, 4), rep(2022, 12), rep(2023, 8))
+month <- c(seq(9, 12), seq(1, 12), seq(1, 8))
+newPistachioF$dateF <- ymd(paste(years, '/', month, '/', 1))
+
+newFallowF <- data.frame(newFallow)
+years <- c(rep(2021, 4), rep(2022, 12), rep(2023, 8))
+month <- c(seq(9, 12), seq(1, 12), seq(1, 8))
+newFallowF$dateF <- ymd(paste(years, '/', month, '/', 1))
+
+ggplot() +
+  geom_line(data = pistachios, aes(x = ymd(date), y = ET.in)) +
+  xlim(ymd(pistachios$date[1], newPistachioF$dateF[24])) +
+  geom_line(data = newPistachioF, aes(x = dateF, y = Point.Forecast),
+            col = 'red') +
+  geom_ribbon(data = newPistachioF,
+              aes(x = dateF, ymin = Lo.95, ymax = Hi.95),
+              fill = rgb(0.5, 0.5, 0.5, 0.5)) +
+  theme_classic() +
+  labs(x = 'Year', y = ' Pistachio evapotranspiration (in)')
+
+ggplot() +
+  geom_line(data = fallow, aes(x = ymd(date), y = ET.in)) +
+  xlim(ymd(fallow$date[1], newFallowF$dateF[24])) +
+  geom_line(data = newFallowF, aes(x = dateF, y = Point.Forecast),
+            col = 'red') +
+  geom_ribbon(data = newFallowF,
+              aes(x = dateF, ymin = Lo.95, ymax = Hi.95),
+              fill = rgb(0.5, 0.5, 0.5, 0.5)) +
+  theme_classic() +
+  labs(x = 'Year', y = 'Fallow/idle cropland evapotranspiration (in)')
 
