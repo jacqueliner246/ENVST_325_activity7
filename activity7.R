@@ -255,6 +255,7 @@ co2_mod.full <- lm(CO2_transformed ~ airTemp +
                      Latitude + HydroV,
                    data = ghg)
 summary(co2_mod.full)
+write.csv(summary(co2_mod.full)$coef, file = "/cloud/project/activity07/co2_table")
 
 ### check assumptions
 co2_res.full <- rstandard(co2_mod.full) 
@@ -273,7 +274,7 @@ co2_reg.data <- data.frame(ghg$airTemp,
                              ghg$log.DIP,
                              ghg$HydroV,
                              ghg$mean.depth,
-                             ghg$log.precip,
+                             ghg$log.runoff,
                            ghg$Latitude)
 chart.Correlation(co2_reg.data, histogram = TRUE, pch = 19)
 
